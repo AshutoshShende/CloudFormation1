@@ -48,7 +48,7 @@ Parameters:
   ECSServiceName:
     Type: String
     Default: my-service
-    Description: This will be used to create service for ECS cluster - applayer/ciam-node.
+    Description: This will be used to create service for ECS cluster.
   ContainerPort:
     Type: Number
     Default: 80
