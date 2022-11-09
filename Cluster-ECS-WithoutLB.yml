@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: >-
+      Select a VPC that allows instances to access the Internet. Select same VPC
+      in which LoadBalancer was created.
+  SubnetId:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: >-
+      Select at two subnets in your selected VPC. Select same Subnets in which
+      LoadBalancer was created.
+  EcsSecurityGroup:
+    Type: 'List<AWS::EC2::SecurityGroup::Id>'
+    Description: Select security group in your selected VPC.
+  Environment:
+    Type: String
+    Default: dev
+    Description: Envirnoment -- 'prod' / 'uat' / 'dev' / 'qa'
+  ECSTaskRoleArn:
+    Type: String
+    Default: 'arn:aws:iam::086429042168:role/ECS-Task-Role'
+    Description: ECS Task role.
+  ECSTaskExecutionRoleArn:
+    Type: String
+    Default: 'arn:aws:iam::086429042168:role/ECS-Task-Role'
+    Description: ECS Task execution role
+  DesiredCapacity:
+    Type: Number
+    Default: '1'
+    Description: Number of instances to launch in your ECS cluster.
+  MaxSize:
+    Type: Number
+    Default: '1'
+    Description: Maximum number of instances that can be launched in your ECS cluster.
+  ECSServiceName:
+    Type: String
+    Default: my-service
+    Description: This will be used to create service for ECS cluster - applayer/ciam-node.
+  ContainerPort:
+    Type: Number
+    Default: 80
+    Description: 'For Container Port'
+  HealthCheckPath:
+    Type: String
+    Default: /
+    Description: For Container Health Check
+  ECRRepositoryName:
+    Type: String
+    Default: sample-repo
+    Description: ECR repo name
+  EcrRepoArn:
+    Type: String
+    Default: 086429042168.dkr.ecr.ap-south-1.amazonaws.com
+    Description: ECR repo ARN. <Do not add repo name>
+Resources:
+  ECSCluster:
+    Type: 'AWS::ECS::Cluster'
+    Properties:
+      ClusterName: SampleCluster
+      CapacityProviders:
+        - FARGATE
+  AppCloudwatchLogsGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Join 
+        - /
+        - - !Ref ECSCluster
+          - !Ref ECSServiceName
+      RetentionInDays: 14
+  EcrRepo:
+    Type: 'AWS::ECR::Repository'
+    Properties:
+      RepositoryName: !Ref ECRRepositoryName
+      Tags:
+        - Key: stack-id
+          Value: !Ref 'AWS::StackName'
+  taskdef:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      RequiresCompatibilities:
+        - FARGATE
+      Family: !Ref ECSServiceName
+      ContainerDefinitions:
+        - Name: !Ref ECSServiceName
+          Image: !Join 
+            - ':'
+            - - !Join 
+                - /
+                - - !Ref EcrRepoArn
+                  - !Ref ECRRepositoryName
+              - latest
+          Essential: 'true'
+          PortMappings:
+            - HostPort: !Ref ContainerPort
+              Protocol: tcp
+              ContainerPort: !Ref ContainerPort
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Join 
+                - /
+                - - !Ref ECSCluster
+                  - !Ref ECSServiceName
+              awslogs-region: ap-south-1
+              awslogs-stream-prefix: !Ref ECSServiceName
+      NetworkMode: awsvpc
+      Memory: '1024'
+      Cpu: '512'
+      TaskRoleArn: !Ref ECSTaskRoleArn
+      ExecutionRoleArn: !Ref ECSTaskExecutionRoleArn
+  service:
+    Type: 'AWS::ECS::Service'
+    DependsOn: taskdef
+    Properties:
+      ServiceName: !Ref ECSServiceName
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref DesiredCapacity
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      TaskDefinition: !Ref taskdef
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups: !Ref EcsSecurityGroup
+          Subnets: !Ref SubnetId
+          AssignPublicIp: ENABLED
+      Tags:
+        - Key: Project
+          Value: training
+        - Key: resource
+          Value: ecs
+        - Key: env
+          Value: dev
+        - Key: 'created-by'
+          Value: Dhruv Singh
+      PropagateTags: SERVICE
+Outputs:
+  service:
+    Value: !Ref service
+  taskdef:
+    Value: !Ref taskdef
+  ECRRepo:
+    Value: !Join 
+      - ':'
+      - - !Join 
+          - /
+          - - !Ref EcrRepoArn
+            - !Ref ECRRepositoryName
+        - latest
