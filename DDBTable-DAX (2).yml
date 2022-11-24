@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Creating DynamoDB tables with CloudFormation
+Parameters:
+  DDBTableName:
+    Type: String
+    Default: Student
+  ClusterSize:
+    Type: Number
+    Default: 1
+  SubnetId:
+    Type: List<AWS::EC2::Subnet::Id>
+  VcpId:
+    Type: AWS::EC2::VPC::Id
+  ClusterName:
+    Type: String
+    Default: test-cluster
+  SecurityGroup:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+Resources:
+  myTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 
+        Ref: DDBTableName
+      AttributeDefinitions:
+      - AttributeName: StudentName
+        AttributeType: S
+#      - AttributeName: Info
+#        AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+      - AttributeName: StudentName
+        KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      ProvisionedThroughput:
+        ReadCapacityUnits: 0
+        WriteCapacityUnits: 0
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      Tags:
+      - Key: stack-id
+        Value:
+          Ref: AWS::StackName
+  DaxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service: "dax.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: DAX
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: "Allow"
+                Action: "dynamodb:*"
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DDBTableName}"
+  awsdaxparamgroup:
+    Type: AWS::DAX::ParameterGroup
+    DependsOn: myTable
+    Properties:
+      ParameterGroupName: my-sample-pg
+  awsdaxsubnetgroup:
+    Type: AWS::DAX::SubnetGroup
+    DependsOn: awsdaxparamgroup
+    Properties:
+      SubnetGroupName: my-sample-sg
+      SubnetIds: 
+        Ref: SubnetId
+  DaxCluster:
+    Type: AWS::DAX::Cluster
+    DependsOn: awsdaxsubnetgroup 
+    Properties:
+      ClusterName:
+        Ref: ClusterName
+      IAMRoleARN: !GetAtt  "DaxRole.Arn"
+      # usually it is a best practice to place instance types
+      # outside of resource definition... But I'm too lazy
+      NodeType: "dax.t2.small"
+      ParameterGroupName:
+        Ref: awsdaxparamgroup
+      PreferredMaintenanceWindow: sat:07:00-sat:08:00 
+      ReplicationFactor: !Ref "ClusterSize"
+      SubnetGroupName:
+        Ref: SecurityGroup
+      SSESpecification:
+        SSEEnabled: true
+      SubnetGroupName:
+        Ref: awsdaxsubnetgroup        
+
+
+Outputs:
+  Student:
+    Description: Student table created with this template
+    Value: !Ref myTable
